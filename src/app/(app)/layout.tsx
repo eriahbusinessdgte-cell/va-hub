@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppNav } from "@/components/app-nav";
+import { GlobalUIProvider } from "@/components/global-ui";
+import { getWorkspaceToday } from "@/lib/workspace";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,17 +19,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .order("name"),
     supabase.from("workspaces").select("name").limit(1).maybeSingle(),
   ]);
+  const { today } = await getWorkspaceToday();
+  const clientOptions = (clients ?? []).map(({ id, name }) => ({ id, name }));
 
   return (
-    <div className="min-h-screen">
-      <AppNav
-        clients={(clients ?? []).map(({ id, name }) => ({ id, name }))}
-        email={auth.user.email ?? ""}
-        workspaceName={workspace?.name ?? "VA Hub"}
-      />
-      <main className="pb-24 md:pb-0 md:pl-60">
-        <div className="mx-auto max-w-6xl px-5 py-8 md:px-10 md:py-10">{children}</div>
-      </main>
-    </div>
+    <GlobalUIProvider clients={clientOptions} today={today}>
+      <div className="min-h-screen">
+        <AppNav clients={clientOptions} email={auth.user.email ?? ""} workspaceName={workspace?.name ?? "VA Hub"} />
+        <main className="pb-24 md:pb-0 md:pl-60">
+          <div className="mx-auto max-w-6xl px-5 py-6 md:px-10 md:py-10">{children}</div>
+        </main>
+      </div>
+    </GlobalUIProvider>
   );
 }

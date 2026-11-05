@@ -7,7 +7,7 @@ import { TASK_STATUSES } from "@/lib/tasks";
 import { nextDueDate, parseRecurrence, type Recurrence } from "@/lib/recurrence";
 import { getWorkspaceToday } from "@/lib/workspace";
 
-export type TaskFormState = { error?: string; ok?: boolean } | undefined;
+export type TaskFormState = { error?: string; ok?: boolean; id?: string } | undefined;
 
 function refresh() {
   revalidatePath("/", "layout");
@@ -82,17 +82,21 @@ export async function createTaskAction(_: TaskFormState, formData: FormData): Pr
 
   const priority = String(formData.get("priority") ?? "medium");
   const supabase = await createClient();
-  const { error } = await supabase.from("tasks").insert({
-    title,
-    client_id: clientId,
-    project_id: str(formData, "project_id"),
-    due_date: str(formData, "due_date"),
-    priority: PRIORITIES.some((p) => p.value === priority) ? priority : "medium",
-  });
-  if (error) return { error: "Couldn't add the task. Please try again." };
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      title,
+      client_id: clientId,
+      project_id: str(formData, "project_id"),
+      due_date: str(formData, "due_date"),
+      priority: PRIORITIES.some((p) => p.value === priority) ? priority : "medium",
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { error: "Couldn't add the task. Please try again." };
 
   refresh();
-  return { ok: true };
+  return { ok: true, id: data.id };
 }
 
 /** Saves the task panel's fields. */

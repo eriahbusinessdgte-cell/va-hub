@@ -11,12 +11,14 @@ import {
   LogOut,
   Menu,
   Plus,
+  Search,
   Settings,
   Target,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(auth)/actions";
+import { useGlobalUI } from "@/components/global-ui";
 
 export type NavClient = { id: string; name: string };
 
@@ -71,6 +73,7 @@ function SidebarContents({
   workspaceName: string;
 }) {
   const pathname = usePathname();
+  const { openSearch, openQuickAdd } = useGlobalUI();
 
   return (
     <div className="flex h-full flex-col">
@@ -78,6 +81,24 @@ function SidebarContents({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon.svg" alt="" className="h-7 w-7" />
         <span className="truncate text-[14px] font-semibold tracking-tight">{workspaceName}</span>
+      </div>
+
+      <div className="space-y-1 px-2.5 pb-4">
+        <button
+          onClick={openSearch}
+          className="flex w-full items-center gap-2.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink-faint transition hover:border-line-strong hover:text-ink-muted"
+        >
+          <Search className="h-[15px] w-[15px]" />
+          <span className="flex-1 text-left">Search</span>
+          <kbd className="rounded border border-line px-1 font-sans text-[11px]">⌘K</kbd>
+        </button>
+        <button
+          onClick={() => openQuickAdd("task")}
+          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] text-ink-muted transition hover:bg-hover hover:text-ink"
+        >
+          <Plus className="h-[15px] w-[15px]" />
+          Quick add
+        </button>
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5">
@@ -143,6 +164,7 @@ export function AppNav(props: { clients: NavClient[]; email: string; workspaceNa
   const [openedOn, setOpenedOn] = useState<string | null>(null);
   const drawerOpen = openedOn === pathname;
   const setDrawerOpen = (open: boolean) => setOpenedOn(open ? pathname : null);
+  const { openSearch, openQuickAdd } = useGlobalUI();
 
   return (
     <>
@@ -150,6 +172,19 @@ export function AppNav(props: { clients: NavClient[]; email: string; workspaceNa
       <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-line bg-sidebar md:block">
         <SidebarContents {...props} />
       </aside>
+
+      {/* Mobile top bar */}
+      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-canvas/95 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur md:hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icon.svg" alt="" className="h-6 w-6" />
+        <span className="flex-1 truncate text-[14px] font-semibold tracking-tight">{props.workspaceName}</span>
+        <button onClick={openSearch} aria-label="Search" className="rounded-md p-2 text-ink-muted hover:bg-hover">
+          <Search className="h-5 w-5" />
+        </button>
+        <button onClick={() => openQuickAdd("task")} aria-label="Quick add" className="rounded-md bg-ink p-2 text-white">
+          <Plus className="h-5 w-5" />
+        </button>
+      </header>
 
       {/* Mobile drawer */}
       {drawerOpen && (
