@@ -41,7 +41,7 @@ Set these in Vercel (Project → Settings → Environment Variables) and in `.en
 4. Kanban, recurring tasks ✅
 5. Leads, pipelines, follow-ups ✅
 6. CSV import/export, full backup export ✅
-7. Calendar and Dashboard
+7. Calendar and Dashboard ✅
 8. Global search, quick add, polish
 
 **Live app:** https://va-hub-six.vercel.app
