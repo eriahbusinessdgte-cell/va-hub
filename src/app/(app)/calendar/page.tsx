@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { Agenda, ItemChip, KIND_STYLE } from "@/components/calendar-parts";
 import { CalendarClientFilter } from "@/components/calendar-client-filter";
 import { LeadPanel } from "@/components/lead-panel";
@@ -93,6 +93,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
       {/* Filters */}
       <div className="mb-5 flex flex-wrap items-center gap-2">
+        <span className="text-[13px] text-ink-muted">Show:</span>
         {ALL_KINDS.map((k) => {
           const s = KIND_STYLE[k];
           const on = kinds.has(k);
@@ -101,12 +102,22 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
               key={k}
               href={toggleKind(k)}
               scroll={false}
+              role="switch"
+              aria-checked={on}
+              title={on ? `Hide ${s.label.toLowerCase()}` : `Show ${s.label.toLowerCase()}`}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] transition",
-                on ? "border-line-strong bg-surface text-ink" : "border-line text-ink-faint line-through",
+                on ? "border-line-strong bg-surface text-ink hover:border-ink-faint" : "border-dashed border-line-strong text-ink-faint hover:text-ink-muted",
               )}
             >
-              <span className={cn("h-2 w-2 rounded-full", on ? s.dot : "bg-line-strong")} />
+              <span
+                className={cn(
+                  "flex h-3.5 w-3.5 items-center justify-center rounded-full",
+                  on ? `${s.dot} text-white` : "border border-line-strong",
+                )}
+              >
+                {on && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              </span>
               {s.label}
             </Link>
           );
