@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronRight, FolderPlus } from "lucide-react";
-import { ComingSoon } from "@/components/page-header";
 import { ProjectActions } from "@/components/project-actions";
 import { DueDate, PriorityLabel, ProgressBar, ProjectStatusBadge } from "@/components/project-badges";
 import { ProjectTree } from "@/components/project-tree";
+import { QuickAddTask } from "@/components/quick-add-task";
+import { TaskList } from "@/components/task-list";
+import { TaskPanel, withoutTask } from "@/components/task-panel";
+import { createClient } from "@/lib/supabase/server";
+import { descendantIds } from "@/lib/projects";
+import { groupByProject, normaliseTask, TASK_ROW_FIELDS, type TaskRow } from "@/lib/tasks";
 import { formatDate } from "@/lib/clients";
 import { progressOf } from "@/lib/projects";
 import { getWorkspaceToday } from "@/lib/workspace";
@@ -16,11 +21,34 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: ctx?.project.name ?? "Project" };
 }
 
-export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProjectPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ task?: string }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
   const [ctx, { today }] = await Promise.all([getProjectContext(id), getWorkspaceToday()]);
   if (!ctx) notFound();
   const { project, client, ancestors, node } = ctx;
+
+  // Tasks in this project and all of its subprojects
+  const inside = descendantIds(ctx.allProjects, id);
+  const supabase = await createClient();
+  const [{ data: openData }, { data: doneData }] = await Promise.all([
+    supabase.from("tasks").select(TASK_ROW_FIELDS).in("project_id", [...inside]).neq("status", "done"),
+    supabase.from("tasks").select(TASK_ROW_FIELDS).in("project_id", [...inside]).eq("status", "done").order("completed_at", { ascending: false }).limit(100),
+  ]);
+  const openTasks = ((openData ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+  const doneTasks = ((doneData ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+  const subprojectOrder = flattenChildren(node.children);
+  const taskGroups = groupByProject(
+    openTasks.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)),
+    subprojectOrder,
+    subprojectOrder.length > 0 ? "This project" : "",
+  );
 
   // Hide archived subprojects unless this project itself is archived
   const children = project.archived_at ? node.children : node.children.filter((c) => !c.archived_at);
@@ -92,10 +120,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
           <section>
             <h2 className="mb-3 text-[15px] font-semibold">Tasks</h2>
-            <ComingSoon phase="Phase 3">
-              Tasks for this project and its subprojects will appear here. Progress fills in
-              automatically as you complete them.
-            </ComingSoon>
+            <div className="mb-4">
+              <QuickAddTask clientId={client.id} projectId={project.id} placeholder="Add a task to this project… (press Enter)" />
+            </div>
+            <TaskList
+              groups={taskGroups}
+              completed={doneTasks}
+              today={today}
+              showProject={false}
+              emptyMessage={subprojectOrder.length > 0 ? "No open tasks in this project or its subprojects." : "No open tasks yet."}
+            />
           </section>
         </div>
 
@@ -127,8 +161,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </dl>
         </aside>
       </div>
+
+      {sp.task && <TaskPanel taskId={sp.task} closeHref={withoutTask(`/projects/${id}`, sp)} />}
     </>
   );
+}
+
+function flattenChildren(nodes: { id: string; name: string; children: unknown[] }[]): { id: string; name: string }[] {
+  return nodes.flatMap((n) => [
+    { id: n.id, name: n.name },
+    ...flattenChildren(n.children as { id: string; name: string; children: unknown[] }[]),
+  ]);
 }
 
 function isInside(all: { id: string; parent_id: string | null }[], id: string, ancestorId: string): boolean {
