@@ -10,6 +10,7 @@ import {
   Home,
   LogOut,
   Menu,
+  Plus,
   Settings,
   Target,
   X,
@@ -91,6 +92,13 @@ function SidebarContents({
             <span className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">
               Clients
             </span>
+            <Link
+              href="/clients/new"
+              aria-label="New client"
+              className="rounded p-0.5 text-ink-faint transition hover:bg-hover hover:text-ink"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Link>
           </div>
           <div className="space-y-0.5">
             {clients.map((c) => (
