@@ -36,7 +36,7 @@ Set these in Vercel (Project → Settings → Environment Variables) and in `.en
 
 0. Foundation: login, layout, database, security ✅
 1. Clients ✅
-2. Projects and nested subprojects
+2. Projects and nested subprojects ✅
 3. Tasks, checklists, My Tasks
 4. Kanban, recurring tasks
 5. Leads, pipelines, follow-ups
