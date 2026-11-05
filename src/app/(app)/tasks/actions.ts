@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { PRIORITIES } from "@/lib/projects";
 import { TASK_STATUSES } from "@/lib/tasks";
+import { nextDueDate, parseRecurrence, type Recurrence } from "@/lib/recurrence";
+import { getWorkspaceToday } from "@/lib/workspace";
 
 export type TaskFormState = { error?: string; ok?: boolean } | undefined;
 
@@ -14,6 +16,61 @@ function refresh() {
 function str(formData: FormData, key: string): string | null {
   const v = String(formData.get(key) ?? "").trim();
   return v === "" ? null : v;
+}
+
+/** Reads the "Repeat" fields from the task panel. */
+function readRecurrence(formData: FormData): Recurrence | null {
+  const freq = String(formData.get("repeat") ?? "");
+  if (!freq || freq === "none") return null;
+  return parseRecurrence({
+    freq,
+    interval: Number(formData.get("repeat_interval") ?? 1),
+    weekdays: formData.getAll("repeat_weekdays").map(Number),
+  });
+}
+
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Marks a task done. If it repeats, the next copy is created with the next due
+ * date (same details, checklist unticked), and the repeat moves to the new copy.
+ */
+async function completeTask(supabase: Supabase, id: string) {
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("id, title, description, priority, due_date, client_id, project_id, recurrence, status, checklist_items(text, sort_order)")
+    .eq("id", id)
+    .single();
+  if (!task || task.status === "done") return;
+
+  const rule = parseRecurrence(task.recurrence);
+  await supabase
+    .from("tasks")
+    .update({ status: "done", completed_at: new Date().toISOString(), ...(rule ? { recurrence: null } : {}) })
+    .eq("id", id);
+  if (!rule) return;
+
+  const { today } = await getWorkspaceToday();
+  const { data: next } = await supabase
+    .from("tasks")
+    .insert({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      client_id: task.client_id,
+      project_id: task.project_id,
+      recurrence: rule,
+      due_date: nextDueDate(rule, task.due_date, today),
+    })
+    .select("id")
+    .single();
+
+  const items = (task.checklist_items ?? []) as { text: string; sort_order: number }[];
+  if (next && items.length > 0) {
+    await supabase
+      .from("checklist_items")
+      .insert(items.map((i) => ({ task_id: next.id, text: i.text, sort_order: i.sort_order })));
+  }
 }
 
 /** Quick add: title plus whatever context the page provides (client, project, due date). */
@@ -51,20 +108,23 @@ export async function updateTaskAction(_: TaskFormState, formData: FormData): Pr
   const supabase = await createClient();
   const { data: current } = await supabase.from("tasks").select("status, completed_at").eq("id", id).single();
 
+  const becomingDone = validStatus === "done" && current?.status !== "done";
   const { error } = await supabase
     .from("tasks")
     .update({
       title,
       description: str(formData, "description"),
-      status: validStatus,
+      // Completion (and the next repeat) is handled by completeTask below
+      status: becomingDone ? current?.status ?? "todo" : validStatus,
       priority: PRIORITIES.some((p) => p.value === priority) ? priority : "medium",
       due_date: str(formData, "due_date"),
       project_id: str(formData, "project_id"),
-      completed_at:
-        validStatus === "done" ? (current?.status === "done" ? current.completed_at : new Date().toISOString()) : null,
+      recurrence: readRecurrence(formData),
+      completed_at: validStatus === "done" ? (current?.completed_at ?? null) : null,
     })
     .eq("id", id);
   if (error) return { error: "Couldn't save. Please try again." };
+  if (becomingDone) await completeTask(supabase, id);
 
   refresh();
   return { ok: true };
@@ -72,10 +132,17 @@ export async function updateTaskAction(_: TaskFormState, formData: FormData): Pr
 
 export async function setTaskDone(id: string, done: boolean) {
   const supabase = await createClient();
-  await supabase
-    .from("tasks")
-    .update({ status: done ? "done" : "todo", completed_at: done ? new Date().toISOString() : null })
-    .eq("id", id);
+  if (done) await completeTask(supabase, id);
+  else await supabase.from("tasks").update({ status: "todo", completed_at: null }).eq("id", id);
+  refresh();
+}
+
+/** Used by the Kanban board when a card is dropped in another column. */
+export async function setTaskStatus(id: string, status: string) {
+  if (!TASK_STATUSES.some((s) => s.value === status)) return;
+  const supabase = await createClient();
+  if (status === "done") await completeTask(supabase, id);
+  else await supabase.from("tasks").update({ status, completed_at: null }).eq("id", id);
   refresh();
 }
 

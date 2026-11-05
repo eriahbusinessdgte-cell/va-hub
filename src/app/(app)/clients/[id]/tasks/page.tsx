@@ -1,4 +1,6 @@
+import { LayoutToggle } from "@/components/layout-toggle";
 import { QuickAddTask } from "@/components/quick-add-task";
+import { TaskBoard } from "@/components/task-board";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel, withoutTask } from "@/components/task-panel";
 import { createClient } from "@/lib/supabase/server";
@@ -11,7 +13,7 @@ export default async function ClientTasksTab({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ task?: string }>;
+  searchParams: Promise<{ task?: string; layout?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -31,6 +33,9 @@ export default async function ClientTasksTab({
 
   return (
     <>
+      <div className="mb-4 flex justify-end">
+        <LayoutToggle />
+      </div>
       <div className="mb-6">
         <QuickAddTask
           clientId={id}
@@ -38,13 +43,17 @@ export default async function ClientTasksTab({
           placeholder="Add a task for this client… (press Enter)"
         />
       </div>
-      <TaskList
-        groups={groups}
-        completed={doneTasks}
-        today={today}
-        showProject={false}
-        emptyMessage="No open tasks for this client."
-      />
+      {sp.layout === "board" ? (
+        <TaskBoard tasks={[...openTasks, ...doneTasks.slice(0, 30)]} today={today} showProject />
+      ) : (
+        <TaskList
+          groups={groups}
+          completed={doneTasks}
+          today={today}
+          showProject={false}
+          emptyMessage="No open tasks for this client."
+        />
+      )}
       {sp.task && <TaskPanel taskId={sp.task} closeHref={withoutTask(`/clients/${id}/tasks`, sp)} />}
     </>
   );

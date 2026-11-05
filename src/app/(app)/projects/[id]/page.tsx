@@ -4,7 +4,9 @@ import { ChevronRight, FolderPlus } from "lucide-react";
 import { ProjectActions } from "@/components/project-actions";
 import { DueDate, PriorityLabel, ProgressBar, ProjectStatusBadge } from "@/components/project-badges";
 import { ProjectTree } from "@/components/project-tree";
+import { LayoutToggle } from "@/components/layout-toggle";
 import { QuickAddTask } from "@/components/quick-add-task";
+import { TaskBoard } from "@/components/task-board";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel, withoutTask } from "@/components/task-panel";
 import { createClient } from "@/lib/supabase/server";
@@ -26,7 +28,7 @@ export default async function ProjectPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ task?: string }>;
+  searchParams: Promise<{ task?: string; layout?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -119,10 +121,16 @@ export default async function ProjectPage({
           </section>
 
           <section>
-            <h2 className="mb-3 text-[15px] font-semibold">Tasks</h2>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[15px] font-semibold">Tasks</h2>
+              <LayoutToggle />
+            </div>
             <div className="mb-4">
               <QuickAddTask clientId={client.id} projectId={project.id} placeholder="Add a task to this project… (press Enter)" />
             </div>
+            {sp.layout === "board" ? (
+              <TaskBoard tasks={[...openTasks, ...doneTasks.slice(0, 30)]} today={today} showProject={subprojectOrder.length > 0} />
+            ) : (
             <TaskList
               groups={taskGroups}
               completed={doneTasks}
@@ -130,6 +138,7 @@ export default async function ProjectPage({
               showProject={false}
               emptyMessage={subprojectOrder.length > 0 ? "No open tasks in this project or its subprojects." : "No open tasks yet."}
             />
+            )}
           </section>
         </div>
 

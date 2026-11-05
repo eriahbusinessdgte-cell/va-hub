@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useOptimistic, useState, useTransition } from "react";
-import { Check, ChevronRight, ListChecks } from "lucide-react";
+import { Check, ChevronRight, ListChecks, Repeat } from "lucide-react";
 import { DueDate, PriorityLabel } from "@/components/project-badges";
 import { setTaskDone } from "@/app/(app)/tasks/actions";
 import type { TaskGroup, TaskRow } from "@/lib/tasks";
@@ -77,6 +77,11 @@ function Row({
             <span className="inline-flex items-center gap-1">
               {showClient && <ChevronRight className="-ml-2 h-3 w-3 text-ink-faint" />}
               {task.projects.name}
+            </span>
+          )}
+          {!!task.recurrence && !done && (
+            <span className="inline-flex items-center" title="Repeats">
+              <Repeat className="h-3 w-3" />
             </span>
           )}
           {checklistTotal > 0 && (

@@ -9,7 +9,7 @@ export async function TaskPanel({ taskId, closeHref }: { taskId: string; closeHr
   const { data } = await supabase
     .from("tasks")
     .select(
-      "id, title, description, status, priority, due_date, completed_at, created_at, client_id, project_id, clients(name), projects(name), checklist_items(id, text, is_done, sort_order)",
+      "id, title, description, status, priority, due_date, completed_at, created_at, client_id, project_id, recurrence, clients(name), projects(name), checklist_items(id, text, is_done, sort_order)",
     )
     .eq("id", taskId)
     .maybeSingle();

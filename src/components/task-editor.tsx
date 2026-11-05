@@ -14,6 +14,7 @@ import {
 } from "@/app/(app)/tasks/actions";
 import { PRIORITIES } from "@/lib/projects";
 import { TASK_STATUSES, type ChecklistItem, type TaskDetail } from "@/lib/tasks";
+import { parseRecurrence, WEEKDAYS } from "@/lib/recurrence";
 import { cn } from "@/lib/utils";
 
 type Option = { id: string; name: string; depth: number };
@@ -96,6 +97,73 @@ function Checklist({ taskId, items }: { taskId: string; items: ChecklistItem[] }
           }
         }}
       />
+    </div>
+  );
+}
+
+function RepeatField({ value }: { value: unknown }) {
+  const initial = parseRecurrence(value);
+  const [freq, setFreq] = useState<string>(initial?.freq ?? "none");
+  const [weekdays, setWeekdays] = useState<number[]>(initial?.weekdays ?? []);
+
+  return (
+    <div>
+      <label htmlFor="repeat" className="label">Repeat</label>
+      <div className="flex flex-wrap items-center gap-2">
+        <select id="repeat" name="repeat" value={freq} onChange={(e) => setFreq(e.target.value)} className="input w-auto">
+          <option value="none">Doesn&apos;t repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="every_x_days">Every X days</option>
+        </select>
+        {(freq === "every_x_days" || freq === "monthly") && (
+          <label className="flex items-center gap-2 text-sm text-ink-muted">
+            every
+            <input
+              name="repeat_interval"
+              type="number"
+              min={1}
+              max={365}
+              defaultValue={initial?.interval ?? (freq === "every_x_days" ? 2 : 1)}
+              className="input w-20 py-1.5"
+            />
+            {freq === "monthly" ? "month(s)" : "days"}
+          </label>
+        )}
+      </div>
+      {freq === "weekly" && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {WEEKDAYS.map((d, i) => {
+            const on = weekdays.includes(i);
+            return (
+              <label
+                key={d}
+                className={cn(
+                  "cursor-pointer select-none rounded-md border px-2.5 py-1 text-[13px] transition",
+                  on ? "border-ink bg-ink text-white" : "border-line text-ink-muted hover:border-line-strong",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  name="repeat_weekdays"
+                  value={i}
+                  checked={on}
+                  onChange={() => setWeekdays((w) => (on ? w.filter((x) => x !== i) : [...w, i]))}
+                  className="sr-only"
+                />
+                {d}
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {freq !== "none" && (
+        <p className="mt-1.5 text-[12.5px] text-ink-faint">
+          When you complete this task, the next one is created automatically
+          {freq === "weekly" && weekdays.length === 0 ? " one week after the due date" : ""}.
+        </p>
+      )}
     </div>
   );
 }
@@ -183,6 +251,8 @@ export function TaskEditor({
                 </select>
               </div>
             </div>
+
+            <RepeatField value={task.recurrence} />
 
             <div>
               <label htmlFor="description" className="label">Notes</label>

@@ -1,11 +1,14 @@
 import Link from "next/link";
+import { LayoutToggle } from "@/components/layout-toggle";
 import { PageHeader } from "@/components/page-header";
+import { TaskBoard } from "@/components/task-board";
 import { QuickAddTask } from "@/components/quick-add-task";
 import { TaskFilters } from "@/components/task-filters";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel, withoutTask } from "@/components/task-panel";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceToday } from "@/lib/workspace";
+import { daysAgoIso } from "@/lib/dates";
 import { groupByDue, normaliseTask, sortTasks, TASK_ROW_FIELDS, type TaskRow } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +21,7 @@ const VIEWS = [
   { key: "done", label: "Completed" },
 ] as const;
 
-type Params = { view?: string; client?: string; priority?: string; task?: string };
+type Params = { view?: string; client?: string; priority?: string; task?: string; layout?: string };
 
 export default async function MyTasksPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
@@ -47,8 +50,20 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
     if (view === "upcoming") query = query.gt("due_date", today);
   }
 
+  const board = params.layout === "board";
   const { data } = await query;
   const tasks = ((data ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+
+  // The board also shows tasks completed in the last 14 days in its Done column
+  let recentDone: TaskRow[] = [];
+  if (board && view !== "done") {
+    const since = daysAgoIso(14);
+    let dq = supabase.from("tasks").select(TASK_ROW_FIELDS).in("client_id", activeClientIds).eq("status", "done").gte("completed_at", since).limit(100);
+    if (params.client) dq = dq.eq("client_id", params.client);
+    if (params.priority) dq = dq.eq("priority", params.priority);
+    const { data: d } = await dq;
+    recentDone = ((d ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+  }
 
   const groups =
     view === "done"
@@ -67,7 +82,7 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
   const closeHref = withoutTask("/tasks", params);
   const linkFor = (v: string) => {
     const qs = new URLSearchParams(
-      Object.entries({ view: v, client: params.client, priority: params.priority }).filter(([, x]) => x) as [string, string][],
+      Object.entries({ view: v, client: params.client, priority: params.priority, layout: params.layout }).filter(([, x]) => x) as [string, string][],
     );
     return `/tasks?${qs.toString()}`;
   };
@@ -104,9 +119,15 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
             </Link>
           ))}
         </div>
-        <TaskFilters clients={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+        <div className="flex flex-wrap items-center gap-2">
+          <TaskFilters clients={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+          <LayoutToggle />
+        </div>
       </div>
 
+      {board ? (
+        <TaskBoard tasks={[...tasks, ...recentDone]} today={today} showClient />
+      ) : (
       <TaskList
         groups={groups}
         today={today}
@@ -121,6 +142,7 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
                 : "No open tasks."
         }
       />
+      )}
 
       {params.task && <TaskPanel taskId={params.task} closeHref={closeHref} />}
     </>

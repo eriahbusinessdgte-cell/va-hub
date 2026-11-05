@@ -21,6 +21,7 @@ export type TaskRow = {
   clients: { name: string } | null;
   projects: { name: string } | null;
   checklist_items: { is_done: boolean }[];
+  recurrence: unknown;
 };
 
 export type ChecklistItem = { id: string; text: string; is_done: boolean; sort_order: number };
@@ -33,7 +34,7 @@ export type TaskDetail = Omit<TaskRow, "checklist_items"> & {
 
 /** Columns for task lists (includes client/project names and checklist progress). */
 export const TASK_ROW_FIELDS =
-  "id, title, status, priority, due_date, completed_at, client_id, project_id, clients(name), projects(name), checklist_items(is_done)";
+  "id, title, status, priority, due_date, completed_at, client_id, project_id, recurrence, clients(name), projects(name), checklist_items(is_done)";
 
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 

@@ -21,3 +21,8 @@ export function longDateIn(timeZone: string): string {
     day: "numeric",
   }).format(new Date());
 }
+
+/** Timestamp (ISO) for N days ago. */
+export function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
