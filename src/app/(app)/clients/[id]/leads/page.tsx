@@ -65,7 +65,13 @@ export default async function ClientLeadsTab({
       </div>
 
       <div className="mb-4">
-        <LeadToolbar statuses={statuses} sources={sources} statusesHref={`/clients/${id}/leads/statuses`} />
+        <LeadToolbar
+          statuses={statuses}
+          sources={sources}
+          statusesHref={`/clients/${id}/leads/statuses`}
+          importHref={`/clients/${id}/leads/import`}
+          clientId={id}
+        />
       </div>
 
       {sp.layout === "board" ? (

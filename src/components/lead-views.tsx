@@ -14,7 +14,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Columns3, List, Plus, Search, Settings2 } from "lucide-react";
+import { Columns3, Download, List, Plus, Search, Settings2, Upload } from "lucide-react";
 import { FollowUp, LeadStatusBadge } from "@/components/lead-badges";
 import { quickAddLead, setLeadStatus } from "@/app/(app)/leads/actions";
 import { formatDate } from "@/lib/clients";
@@ -86,12 +86,17 @@ export function LeadToolbar({
   sources,
   clients,
   statusesHref,
+  importHref,
+  clientId,
 }: {
   /** Specific statuses (client view). Without them, Open/Won/Lost is offered. */
   statuses?: LeadStatus[];
   sources: string[];
   clients?: { id: string; name: string }[];
   statusesHref?: string;
+  importHref?: string;
+  /** Fixed client for exports from a client's Leads tab */
+  clientId?: string;
 }) {
   const { searchParams, go, build } = useLeadUrl();
   const [q, setQ] = useState(searchParams.get("q") ?? "");
@@ -118,6 +123,15 @@ export function LeadToolbar({
       ))}
     </select>
   );
+
+  // Export uses whatever filters are on screen
+  const exportHref = (() => {
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete("lead");
+    p.delete("layout");
+    if (clientId) p.set("client", clientId);
+    return `/api/export/leads?${p.toString()}`;
+  })();
 
   const toggle = (layout: "list" | "board", Icon: typeof List, label: string) => (
     <Link
@@ -159,7 +173,15 @@ export function LeadToolbar({
           { value: "contacted", label: "Sort: last contacted" },
           { value: "newest", label: "Sort: newest" },
         ])}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-1">
+        {importHref && (
+          <Link href={importHref} className="btn-ghost py-1.5 text-[13px]">
+            <Upload className="h-3.5 w-3.5" /> Import
+          </Link>
+        )}
+        <a href={exportHref} className="btn-ghost py-1.5 text-[13px]" title="Download the leads shown as a CSV file">
+          <Download className="h-3.5 w-3.5" /> Export
+        </a>
         {statusesHref && (
           <Link href={statusesHref} className="btn-ghost py-1.5 text-[13px]">
             <Settings2 className="h-3.5 w-3.5" /> Edit statuses
