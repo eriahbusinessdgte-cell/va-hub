@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { normaliseTask } from "@/lib/tasks";
+import { getActiveClients } from "@/lib/workspace";
 
 export * from "@/lib/cal-dates";
 
@@ -22,44 +23,44 @@ export async function loadCalendarItems(
   opts: { clientId?: string; kinds: Set<string> },
 ): Promise<CalendarItem[]> {
   const supabase = await createClient();
-  const { data: clients } = await supabase.from("clients").select("id, name").is("archived_at", null);
-  const ids = (clients ?? []).map((c) => c.id).filter((id) => !opts.clientId || id === opts.clientId);
-  const nameOf = new Map((clients ?? []).map((c) => [c.id, c.name]));
-  if (ids.length === 0) return [];
+  let taskQ = supabase
+    .from("tasks")
+    .select("id, title, status, priority, due_date, client_id, clients(name), projects(name)")
+    .gte("due_date", start)
+    .lte("due_date", end)
+    .limit(2000);
+  let projectQ = supabase
+    .from("projects")
+    .select("id, name, status, priority, due_date, client_id")
+    .is("archived_at", null)
+    .gte("due_date", start)
+    .lte("due_date", end);
+  let leadQ = supabase
+    .from("leads")
+    .select("id, name, company, follow_up_date, client_id, lead_statuses(kind)")
+    .is("archived_at", null)
+    .gte("follow_up_date", start)
+    .lte("follow_up_date", end)
+    .limit(2000);
+  if (opts.clientId) {
+    taskQ = taskQ.eq("client_id", opts.clientId);
+    projectQ = projectQ.eq("client_id", opts.clientId);
+    leadQ = leadQ.eq("client_id", opts.clientId);
+  }
+  const none = Promise.resolve({ data: [] as unknown[] });
 
-  const [tasks, projects, leads] = await Promise.all([
-    opts.kinds.has("task")
-      ? supabase
-          .from("tasks")
-          .select("id, title, status, priority, due_date, client_id, clients(name), projects(name)")
-          .in("client_id", ids)
-          .gte("due_date", start)
-          .lte("due_date", end)
-          .limit(2000)
-      : Promise.resolve({ data: [] }),
-    opts.kinds.has("project")
-      ? supabase
-          .from("projects")
-          .select("id, name, status, priority, due_date, client_id")
-          .in("client_id", ids)
-          .is("archived_at", null)
-          .gte("due_date", start)
-          .lte("due_date", end)
-      : Promise.resolve({ data: [] }),
-    opts.kinds.has("followup")
-      ? supabase
-          .from("leads")
-          .select("id, name, company, follow_up_date, client_id, lead_statuses(kind)")
-          .in("client_id", ids)
-          .is("archived_at", null)
-          .gte("follow_up_date", start)
-          .lte("follow_up_date", end)
-          .limit(2000)
-      : Promise.resolve({ data: [] }),
+  // Everything in parallel; archived clients are filtered out afterwards
+  const [clients, tasks, projects, leads] = await Promise.all([
+    getActiveClients(),
+    opts.kinds.has("task") ? taskQ : none,
+    opts.kinds.has("project") ? projectQ : none,
+    opts.kinds.has("followup") ? leadQ : none,
   ]);
+  const nameOf = new Map(clients.map((c) => [c.id, c.name]));
+  const isActive = (row: { client_id: string }) => nameOf.has(row.client_id);
 
   const items: CalendarItem[] = [];
-  for (const raw of (tasks.data ?? []) as unknown[]) {
+  for (const raw of ((tasks.data ?? []) as { client_id: string }[]).filter(isActive) as unknown[]) {
     const t = normaliseTask(raw as { clients: unknown; projects: unknown } & Record<string, string>) as unknown as {
       id: string; title: string; status: string; priority: string; due_date: string; client_id: string;
     };
@@ -68,13 +69,13 @@ export async function loadCalendarItems(
       client: nameOf.get(t.client_id) ?? "", done: t.status === "done", urgent: t.priority === "urgent" || t.priority === "high",
     });
   }
-  for (const p of (projects.data ?? []) as { id: string; name: string; status: string; priority: string; due_date: string; client_id: string }[]) {
+  for (const p of ((projects.data ?? []) as { id: string; name: string; status: string; priority: string; due_date: string; client_id: string }[]).filter(isActive)) {
     items.push({
       key: `p-${p.id}`, date: p.due_date, kind: "project", id: p.id, title: p.name,
       client: nameOf.get(p.client_id) ?? "", done: p.status === "completed", urgent: p.priority === "urgent" || p.priority === "high",
     });
   }
-  for (const l of (leads.data ?? []) as { id: string; name: string; company: string | null; follow_up_date: string; client_id: string; lead_statuses: { kind: string } | { kind: string }[] | null }[]) {
+  for (const l of ((leads.data ?? []) as { id: string; name: string; company: string | null; follow_up_date: string; client_id: string; lead_statuses: { kind: string } | { kind: string }[] | null }[]).filter(isActive)) {
     const status = Array.isArray(l.lead_statuses) ? l.lead_statuses[0] : l.lead_statuses;
     if (status?.kind === "won" || status?.kind === "lost") continue; // closed leads don't need follow-up
     items.push({

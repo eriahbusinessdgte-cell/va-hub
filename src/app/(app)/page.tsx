@@ -8,7 +8,7 @@ import { QuickAddTask } from "@/components/quick-add-task";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel } from "@/components/task-panel";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getActiveClients, getWorkspace } from "@/lib/workspace";
 import { daysAgoIso, greetingIn, longDateIn } from "@/lib/dates";
 import { addDays, daysBetween } from "@/lib/cal-dates";
 import { loadCalendarItems } from "@/lib/calendar";
@@ -42,35 +42,33 @@ function Empty({ children }: { children: React.ReactNode }) {
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ task?: string; lead?: string }> }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const { timezone, today } = await getWorkspaceToday();
+  const { timezone, today } = await getWorkspace();
 
-  const { data: clientRows } = await supabase
-    .from("clients")
-    .select("id, name, status, is_internal")
-    .is("archived_at", null)
-    .order("is_internal", { ascending: false })
-    .order("name");
-  const clients = clientRows ?? [];
-  const ids = clients.map((c) => c.id);
-
-  const [{ data: profile }, { data: dueTasks }, { data: openTaskRows }, { data: leadRows }, { data: projectRows }, upcoming] = await Promise.all([
-    supabase.from("profiles").select("full_name").limit(1).maybeSingle(),
-    supabase.from("tasks").select(TASK_ROW_FIELDS).in("client_id", ids).neq("status", "done").lte("due_date", today).limit(200),
-    supabase.from("tasks").select("client_id, project_id, status").in("client_id", ids).limit(10000),
-    supabase.from("leads").select(LEAD_FIELDS).in("client_id", ids).is("archived_at", null).limit(10000),
-    supabase.from("projects").select(PROJECT_FIELDS).in("client_id", ids).is("archived_at", null),
-    loadCalendarItems(addDays(today, 1), addDays(today, 7), { kinds: new Set(["task", "project"]) }),
-  ]);
+  // Everything in one go (in parallel). Your data only, thanks to the database's security rules.
+  const [clients, { data: profile }, { data: dueTasks }, { data: openTaskRows }, { data: leadRows }, { data: projectRows }, upcomingAll] =
+    await Promise.all([
+      getActiveClients(),
+      supabase.from("profiles").select("full_name").limit(1).maybeSingle(),
+      supabase.from("tasks").select(TASK_ROW_FIELDS).neq("status", "done").lte("due_date", today).limit(300),
+      supabase.from("tasks").select("client_id, project_id, status").limit(10000),
+      supabase.from("leads").select(LEAD_FIELDS).is("archived_at", null).limit(10000),
+      supabase.from("projects").select(PROJECT_FIELDS).is("archived_at", null),
+      loadCalendarItems(addDays(today, 1), addDays(today, 7), { kinds: new Set(["task", "project"]) }),
+    ]);
+  // Leave out archived clients' work
+  const active = new Set(clients.map((c) => c.id));
+  const keep = <T extends { client_id: string }>(rows: T[] | null) => (rows ?? []).filter((r) => active.has(r.client_id));
+  const upcoming = upcomingAll;
 
   // ----- Tasks -----
-  const priorities = ((dueTasks ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+  const priorities = keep(dueTasks as unknown as TaskRow[]).map((t) => normaliseTask(t));
   const taskGroups = groupByDue(priorities, today);
-  const allTasks = openTaskRows ?? [];
+  const allTasks = keep(openTaskRows);
   const openTasks = allTasks.filter((t) => t.status !== "done");
   const overdueCount = priorities.filter((t) => t.due_date! < today).length;
 
   // ----- Leads -----
-  const leads = ((leadRows ?? []) as unknown as Lead[]).map(normaliseLead);
+  const leads = keep(leadRows as unknown as Lead[]).map(normaliseLead);
   const followUps = leads
     .filter((l) => ["overdue", "today"].includes(followUpState(l, today)))
     .sort((a, b) => (a.follow_up_date ?? "").localeCompare(b.follow_up_date ?? ""));
@@ -79,7 +77,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const openLeads = leads.filter((l) => (l.lead_statuses?.kind ?? "open") === "open");
 
   // ----- Projects (top-level, unfinished, soonest due first) -----
-  const tree = buildProjectTree((projectRows ?? []) as Project[], allTasks);
+  const tree = buildProjectTree(keep(projectRows as Project[] | null), allTasks);
   const activeProjects = flattenTree(tree).filter((p) => p.status !== "completed");
   const projectList = tree.filter((p) => p.status !== "completed").slice(0, 6);
   const clientName = new Map(clients.map((c) => [c.id, c.name]));

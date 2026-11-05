@@ -2,14 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { toCSV } from "@/lib/csv";
 import { filterLeads, LEAD_FIELDS, normaliseLead, sortLeads, type Lead } from "@/lib/leads";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getSessionUser, getWorkspaceToday } from "@/lib/workspace";
 
 /** Downloads leads as CSV. Uses the same filters as the screen (client, search, status, …). */
 export async function GET(request: NextRequest) {
   const sp = Object.fromEntries(request.nextUrl.searchParams.entries());
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  if (!(await getSessionUser())) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
 
   let query = supabase.from("leads").select(LEAD_FIELDS).is("archived_at", null).limit(20000);
   if (sp.client) query = query.eq("client_id", sp.client);

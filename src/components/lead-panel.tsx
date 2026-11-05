@@ -5,21 +5,24 @@ import { LEAD_FIELDS, normaliseLead, STATUS_FIELDS, uniqueSources, type Lead, ty
 /** Loads a lead and shows the slide-in editor. Rendered when the URL has ?lead=… */
 export async function LeadPanel({ leadId, closeHref, today }: { leadId: string; closeHref: string; today: string }) {
   const supabase = await createClient();
-  const { data } = await supabase.from("leads").select(LEAD_FIELDS).eq("id", leadId).maybeSingle();
+  // One request: the lead, plus its client's pipeline stages and the sources used before
+  const { data } = await supabase
+    .from("leads")
+    .select(LEAD_FIELDS.replace("clients(name)", `clients(name, lead_statuses(${STATUS_FIELDS}), leads(source))`))
+    .eq("id", leadId)
+    .maybeSingle();
   if (!data) return null;
   const lead = normaliseLead(data as unknown as Lead);
-
-  const [{ data: statuses }, { data: sourceRows }] = await Promise.all([
-    supabase.from("lead_statuses").select(STATUS_FIELDS).eq("client_id", lead.client_id).order("sort_order"),
-    supabase.from("leads").select("source").eq("client_id", lead.client_id).not("source", "is", null).limit(1000),
-  ]);
-  const sources = uniqueSources((sourceRows ?? []).map((r) => r.source as string));
+  const raw = data as unknown as { clients: { lead_statuses?: LeadStatus[]; leads?: { source: string | null }[] } | null };
+  const clientRow = Array.isArray(raw.clients) ? raw.clients[0] : raw.clients;
+  const statuses = [...(clientRow?.lead_statuses ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+  const sources = uniqueSources((clientRow?.leads ?? []).map((r: { source: string | null }) => r.source));
 
   return (
     <LeadEditor
       key={lead.id}
       lead={lead}
-      statuses={(statuses ?? []) as LeadStatus[]}
+      statuses={statuses}
       sources={sources}
       today={today}
       closeHref={closeHref}

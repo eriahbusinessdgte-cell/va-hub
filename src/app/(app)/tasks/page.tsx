@@ -7,7 +7,7 @@ import { TaskFilters } from "@/components/task-filters";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel, withoutTask } from "@/components/task-panel";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getActiveClients, getWorkspaceToday } from "@/lib/workspace";
 import { daysAgoIso } from "@/lib/dates";
 import { groupByDue, normaliseTask, sortTasks, TASK_ROW_FIELDS, type TaskRow } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
@@ -29,19 +29,11 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
 
   const supabase = await createClient();
   const { today } = await getWorkspaceToday();
+  const board = params.layout === "board";
 
-  const { data: clients } = await supabase
-    .from("clients")
-    .select("id, name, is_internal")
-    .is("archived_at", null)
-    .order("is_internal", { ascending: false })
-    .order("name");
-  const activeClientIds = (clients ?? []).map((c) => c.id);
-
-  let query = supabase.from("tasks").select(TASK_ROW_FIELDS).in("client_id", activeClientIds);
+  let query = supabase.from("tasks").select(TASK_ROW_FIELDS);
   if (params.client) query = query.eq("client_id", params.client);
   if (params.priority) query = query.eq("priority", params.priority);
-
   if (view === "done") {
     query = query.eq("status", "done").order("completed_at", { ascending: false }).limit(200);
   } else {
@@ -50,20 +42,25 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
     if (view === "upcoming") query = query.gt("due_date", today);
   }
 
-  const board = params.layout === "board";
-  const { data } = await query;
-  const tasks = ((data ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
-
   // The board also shows tasks completed in the last 14 days in its Done column
-  let recentDone: TaskRow[] = [];
-  if (board && view !== "done") {
-    const since = daysAgoIso(14);
-    let dq = supabase.from("tasks").select(TASK_ROW_FIELDS).in("client_id", activeClientIds).eq("status", "done").gte("completed_at", since).limit(100);
-    if (params.client) dq = dq.eq("client_id", params.client);
-    if (params.priority) dq = dq.eq("priority", params.priority);
-    const { data: d } = await dq;
-    recentDone = ((d ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
-  }
+  let doneQuery = supabase.from("tasks").select(TASK_ROW_FIELDS).eq("status", "done").gte("completed_at", daysAgoIso(14)).limit(100);
+  if (params.client) doneQuery = doneQuery.eq("client_id", params.client);
+  if (params.priority) doneQuery = doneQuery.eq("priority", params.priority);
+
+  // Everything in parallel
+  const [clients, { data }, { data: dueRows }, recent] = await Promise.all([
+    getActiveClients(),
+    query,
+    supabase.from("tasks").select("client_id, due_date").neq("status", "done").lte("due_date", today).limit(2000),
+    board && view !== "done" ? doneQuery : Promise.resolve({ data: [] }),
+  ]);
+
+  // Leave out archived clients' tasks
+  const active = new Set(clients.map((c) => c.id));
+  const toRows = (rows: unknown) =>
+    ((rows ?? []) as TaskRow[]).filter((t) => active.has(t.client_id)).map((t) => normaliseTask(t));
+  const tasks = toRows(data);
+  const recentDone = toRows(recent.data);
 
   const groups =
     view === "done"
@@ -72,12 +69,10 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
         ? [{ key: "upcoming", label: "", tasks: sortTasks(tasks) }]
         : groupByDue(tasks, today);
 
-  // Counts for the tab labels
-  const count = { count: "exact" as const, head: true };
-  const [todayCount, overdueCount] = await Promise.all([
-    supabase.from("tasks").select("id", count).in("client_id", activeClientIds).neq("status", "done").eq("due_date", today),
-    supabase.from("tasks").select("id", count).in("client_id", activeClientIds).neq("status", "done").lt("due_date", today),
-  ]);
+  // Counts for the "Today" tab label
+  const due = (dueRows ?? []).filter((t) => active.has(t.client_id));
+  const todayCount = { count: due.filter((t) => t.due_date === today).length };
+  const overdueCount = { count: due.filter((t) => t.due_date! < today).length };
 
   const closeHref = withoutTask("/tasks", params);
   const linkFor = (v: string) => {
@@ -93,7 +88,7 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
 
       <div className="mb-5">
         <QuickAddTask
-          clientOptions={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          clientOptions={clients.map((c) => ({ id: c.id, name: c.name }))}
           defaultDue={view === "today" ? today : undefined}
           placeholder="Add a task… (press Enter)"
         />
@@ -120,7 +115,7 @@ export default async function MyTasksPage({ searchParams }: { searchParams: Prom
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <TaskFilters clients={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+          <TaskFilters clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
           <LayoutToggle />
         </div>
       </div>

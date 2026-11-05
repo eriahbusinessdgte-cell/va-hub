@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { LeadPanel } from "@/components/lead-panel";
 import { LeadBoard, LeadQuickAdd, LeadTable, LeadToolbar } from "@/components/lead-views";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getActiveClients, getWorkspaceToday } from "@/lib/workspace";
 import {
   filterLeads,
   followUpState,
@@ -24,28 +24,20 @@ export default async function AllLeadsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const { data: clients } = await supabase
-    .from("clients")
-    .select("id, name, is_internal")
-    .is("archived_at", null)
-    .order("is_internal", { ascending: false })
-    .order("name");
-  const clientIds = (clients ?? []).map((c) => c.id);
-
-  const [{ data: leadRows }, { today }] = await Promise.all([
-    supabase.from("leads").select(LEAD_FIELDS).in("client_id", clientIds).is("archived_at", null).limit(10000),
+  const [clients, { data: leadRows }, { today }, { data: statusRows }] = await Promise.all([
+    getActiveClients(),
+    supabase.from("leads").select(LEAD_FIELDS).is("archived_at", null).limit(10000),
     getWorkspaceToday(),
+    // Pipeline needs one client's stages
+    sp.layout === "board" && sp.client
+      ? supabase.from("lead_statuses").select(STATUS_FIELDS).eq("client_id", sp.client).order("sort_order")
+      : Promise.resolve({ data: [] }),
   ]);
-  const all = ((leadRows ?? []) as unknown as Lead[]).map(normaliseLead);
+  const active = new Set(clients.map((c) => c.id));
+  const all = ((leadRows ?? []) as unknown as Lead[]).filter((l) => active.has(l.client_id)).map(normaliseLead);
+  const statuses = (statusRows ?? []) as LeadStatus[];
   const sources = uniqueSources(all.map((l) => l.source));
   const leads = sortLeads(filterLeads(all, sp, today), sp.sort);
-
-  // Pipeline needs one client's stages
-  let statuses: LeadStatus[] = [];
-  if (sp.layout === "board" && sp.client) {
-    const { data } = await supabase.from("lead_statuses").select(STATUS_FIELDS).eq("client_id", sp.client).order("sort_order");
-    statuses = (data ?? []) as LeadStatus[];
-  }
 
   const overdue = all.filter((l) => followUpState(l, today) === "overdue").length;
   const dueToday = all.filter((l) => followUpState(l, today) === "today").length;
@@ -79,11 +71,11 @@ export default async function AllLeadsPage({ searchParams }: { searchParams: Pro
       </section>
 
       <div className="mb-4">
-        <LeadQuickAdd clientOptions={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+        <LeadQuickAdd clientOptions={clients.map((c) => ({ id: c.id, name: c.name }))} />
       </div>
 
       <div className="mb-4">
-        <LeadToolbar sources={sources} clients={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+        <LeadToolbar sources={sources} clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
       </div>
 
       {sp.layout === "board" ? (

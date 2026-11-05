@@ -9,19 +9,17 @@ export async function TaskPanel({ taskId, closeHref }: { taskId: string; closeHr
   const { data } = await supabase
     .from("tasks")
     .select(
-      "id, title, description, status, priority, due_date, completed_at, created_at, client_id, project_id, recurrence, clients(name), projects(name), checklist_items(id, text, is_done, sort_order)",
+      `id, title, description, status, priority, due_date, completed_at, created_at, client_id, project_id, recurrence, clients(name, projects(${PROJECT_FIELDS})), projects(name), checklist_items(id, text, is_done, sort_order)`,
     )
     .eq("id", taskId)
     .maybeSingle();
   if (!data) return null;
   const task = normaliseTask(data) as unknown as TaskDetail;
 
-  const { data: projects } = await supabase
-    .from("projects")
-    .select(PROJECT_FIELDS)
-    .eq("client_id", task.client_id)
-    .is("archived_at", null);
-  const projectOptions = flattenTree(buildProjectTree((projects ?? []) as Project[])).map((p) => ({
+  // The client's projects came back in the same request
+  const clientRow = (Array.isArray(data.clients) ? data.clients[0] : data.clients) as { projects?: Project[] } | null;
+  const projects = (clientRow?.projects ?? []).filter((p) => !p.archived_at);
+  const projectOptions = flattenTree(buildProjectTree(projects)).map((p) => ({
     id: p.id,
     name: p.name,
     depth: p.depth,

@@ -9,9 +9,8 @@ import { QuickAddTask } from "@/components/quick-add-task";
 import { TaskBoard } from "@/components/task-board";
 import { TaskList } from "@/components/task-list";
 import { TaskPanel, withoutTask } from "@/components/task-panel";
-import { createClient } from "@/lib/supabase/server";
 import { descendantIds } from "@/lib/projects";
-import { groupByProject, normaliseTask, TASK_ROW_FIELDS, type TaskRow } from "@/lib/tasks";
+import { groupByProject } from "@/lib/tasks";
 import { formatDate } from "@/lib/clients";
 import { progressOf } from "@/lib/projects";
 import { getWorkspaceToday } from "@/lib/workspace";
@@ -38,13 +37,8 @@ export default async function ProjectPage({
 
   // Tasks in this project and all of its subprojects
   const inside = descendantIds(ctx.allProjects, id);
-  const supabase = await createClient();
-  const [{ data: openData }, { data: doneData }] = await Promise.all([
-    supabase.from("tasks").select(TASK_ROW_FIELDS).in("project_id", [...inside]).neq("status", "done"),
-    supabase.from("tasks").select(TASK_ROW_FIELDS).in("project_id", [...inside]).eq("status", "done").order("completed_at", { ascending: false }).limit(100),
-  ]);
-  const openTasks = ((openData ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
-  const doneTasks = ((doneData ?? []) as unknown[]).map((t) => normaliseTask(t as TaskRow));
+  const openTasks = ctx.openTasks.filter((t) => t.project_id && inside.has(t.project_id));
+  const doneTasks = ctx.doneTasks.filter((t) => t.project_id && inside.has(t.project_id)).slice(0, 100);
   const subprojectOrder = flattenChildren(node.children);
   const taskGroups = groupByProject(
     openTasks.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)),

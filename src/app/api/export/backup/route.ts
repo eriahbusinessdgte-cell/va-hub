@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { strToU8, zipSync } from "fflate";
 import { createClient } from "@/lib/supabase/server";
 import { toCSV } from "@/lib/csv";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getSessionUser, getWorkspaceToday } from "@/lib/workspace";
 
 const TABLES = [
   "workspaces",
@@ -33,8 +33,7 @@ async function readAll(supabase: Awaited<ReturnType<typeof createClient>>, table
  */
 export async function GET() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  if (!(await getSessionUser())) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
 
   const { today } = await getWorkspaceToday();
   const files: Record<string, Uint8Array> = {};

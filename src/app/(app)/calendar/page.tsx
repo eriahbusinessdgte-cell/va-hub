@@ -4,8 +4,7 @@ import { Agenda, ItemChip, KIND_STYLE } from "@/components/calendar-parts";
 import { CalendarClientFilter } from "@/components/calendar-client-filter";
 import { LeadPanel } from "@/components/lead-panel";
 import { TaskPanel } from "@/components/task-panel";
-import { createClient } from "@/lib/supabase/server";
-import { getWorkspaceToday } from "@/lib/workspace";
+import { getActiveClients, getWorkspaceToday } from "@/lib/workspace";
 import { loadCalendarItems, type CalendarItem } from "@/lib/calendar";
 import { addDays, addMonths, daysBetween, fmt, isValidDate, rangeFor, startOfMonth } from "@/lib/cal-dates";
 import { cn } from "@/lib/utils";
@@ -26,10 +25,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const kinds = new Set(sp.show ? sp.show.split(",").filter((k) => (ALL_KINDS as readonly string[]).includes(k)) : ALL_KINDS);
 
   const { start, end } = rangeFor(view, date);
-  const supabase = await createClient();
-  const [items, { data: clients }] = await Promise.all([
+  const [items, clients] = await Promise.all([
     loadCalendarItems(start, end, { clientId: sp.client, kinds }),
-    supabase.from("clients").select("id, name, is_internal").is("archived_at", null).order("is_internal", { ascending: false }).order("name"),
+    getActiveClients(),
   ]);
 
   // ----- URL helpers (everything lives in the address, so views can be bookmarked) -----
@@ -123,7 +121,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           );
         })}
         <div className="ml-auto">
-          <CalendarClientFilter clients={(clients ?? []).map((c) => ({ id: c.id, name: c.name }))} />
+          <CalendarClientFilter clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
         </div>
       </div>
 
