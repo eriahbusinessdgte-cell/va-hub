@@ -39,7 +39,7 @@ Set these in Vercel (Project → Settings → Environment Variables) and in `.en
 2. Projects and nested subprojects ✅
 3. Tasks, checklists, My Tasks ✅
 4. Kanban, recurring tasks ✅
-5. Leads, pipelines, follow-ups
+5. Leads, pipelines, follow-ups ✅
 6. CSV import/export, full backup export
 7. Calendar and Dashboard
 8. Global search, quick add, polish
